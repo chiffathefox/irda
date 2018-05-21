@@ -3,21 +3,24 @@ static const unsigned char leftBwdPin = 5;
 static const unsigned char leftFwdPin = 6;
 static const unsigned char rightBwdPin = 9;
 static const unsigned char rightFwdPin = 10;
-static const unsigned char irPins[] = { A0, A0, A0, A0, A0 };
+static const unsigned char irPins[] = { A3, A0, A4, A1, A2 };
+static const unsigned char clpPin = 2;
 static const uint16_t irThreshold = 200;
-static const uint32_t irSamplesCount = 80;
+static const uint32_t irSamplesCount = 5;
 static const int maxDutyCycle = 255;
+static const unsigned long lerpTime = 500;
 
 static bool irLast[] = { false, false, false, false, false };
 static uint32_t irValues[sizeof (irLast) / sizeof (*irLast)][irSamplesCount];
 static uint32_t irCount = 0;
 static bool irFilled = false;
+static unsigned long lerpLastTime = -1;
 
 
 static void writeDutyCycle(unsigned char bwdPin, unsigned char fwdPin,
         int value);
 static void writeLRDutyCycle(int left, int right);
-static void readSensors();
+static unsigned char readSensors();
 static bool hasLine(unsigned char i);
 
 
@@ -28,6 +31,7 @@ void setup()
     pinMode(leftFwdPin, OUTPUT);
     pinMode(rightBwdPin, OUTPUT);
     pinMode(rightFwdPin, OUTPUT);
+    pinMode(clpPin, INPUT_PULLUP);
 
     writeLRDutyCycle(0, 0);
 
@@ -39,27 +43,90 @@ void setup()
 
 void loop()
 {
-    readSensors();
+    static unsigned char last = 0;
+    static unsigned long lastTime = -1;
 
-    if (hasLine(2)) {
-        writeLRDutyCycle(maxDutyCycle, maxDutyCycle);
-    } else if (hasLine(1)) {
+    if (digitalRead(clpPin)) {
         const int dutyCycle = maxDutyCycle / 2;
+
+        writeLRDutyCycle(0, 0);
+        delay(3000);
+        writeLRDutyCycle(-dutyCycle, -dutyCycle);
+        delay(4000);
+        writeLRDutyCycle(0, 0);
+    } 
+
+    unsigned char current = readSensors();
+
+    if (!current) {
+        current = last;
+    } 
+
+    if (current & (1 << 2)) {
+        if ((last & (1 << 2)) == 0) {
+            lerpLastTime = -1;
+        }
+
+        const int dutyCycle = lerp(maxDutyCycle, lerpTime);
+
+        writeLRDutyCycle(dutyCycle, dutyCycle);
+    } else if (current & (1 << 3)) {
+        if ((last & (1 << 3)) == 0) {
+            lerpLastTime = -1;
+        }
+
+        const int dutyCycle = lerp(maxDutyCycle / 2, lerpTime);
 
         writeLRDutyCycle(-dutyCycle, dutyCycle);
-    } else if (hasLine(0)) {
-        writeLRDutyCycle(-maxDutyCycle, maxDutyCycle);
-    } else if (hasLine(3)) {
-        const int dutyCycle = maxDutyCycle / 2;
+    } else if (current & (1 << 4)) {
+        if ((last & (1 << 4)) == 0) {
+            lerpLastTime = -1;
+        }
+
+        const int dutyCycle = lerp(maxDutyCycle, lerpTime);
+
+        writeLRDutyCycle(-dutyCycle, dutyCycle);
+    } else if (current & (1 << 1)) {
+        if ((last & (1 << 1)) == 0) {
+            lerpLastTime = -1;
+        }
+
+        const int dutyCycle = lerp(maxDutyCycle / 2, lerpTime);
 
         writeLRDutyCycle(dutyCycle, -dutyCycle);
-    } else if (hasLine(4)) {
-        writeLRDutyCycle(maxDutyCycle, -maxDutyCycle);
+    } else if (current & 1) {
+        if ((last & 1) == 0) {
+            lerpLastTime = -1;
+        }
+
+        const int dutyCycle = lerp(maxDutyCycle, lerpTime);
+
+        writeLRDutyCycle(dutyCycle, -dutyCycle);
     } else {
         const int dutyCycle = maxDutyCycle / 4;
 
         writeLRDutyCycle(dutyCycle, dutyCycle);
     }
+
+    last = current;
+}
+
+
+static int lerp(int max, int transitionTime)
+{
+    if (lerpLastTime == -1) {
+        lerpLastTime = millis();
+
+        return 0;
+    }
+
+    unsigned long diff = millis() - lerpLastTime;
+
+    if (diff >= transitionTime) {
+        return max;
+    }
+
+    return max * diff / transitionTime;
 }
 
 
@@ -83,7 +150,7 @@ static void writeLRDutyCycle(int left, int right)
 }
 
 
-static void readSensors()
+static unsigned char readSensors()
 {
     for (unsigned char i = 0; i < sizeof (irPins) / sizeof (*irPins); i++) {
         irValues[i][irCount] = analogRead(irPins[i]);
@@ -103,9 +170,12 @@ static void readSensors()
                 total += irValues[i][j];
             }
 
-            irLast[i] = total / irSamplesCount <= irThreshold;
+            irLast[i] = total / irSamplesCount > irThreshold;
         }
     }
+
+    return (hasLine(0) << 4) | (hasLine(1) << 3) | (hasLine(2) << 2) |
+           (hasLine(3) << 1) |  hasLine(4);
 }
 
 
