@@ -8,13 +8,19 @@ static const unsigned char clpPin = 2;
 static const uint16_t irThreshold = 200;
 static const uint32_t irSamplesCount = 5;
 static const int maxDutyCycle = 255;
-static const unsigned long lerpTime = 500;
+static const float lerpTime = 100;
 
 static bool irLast[] = { false, false, false, false, false };
 static uint32_t irValues[sizeof (irLast) / sizeof (*irLast)][irSamplesCount];
 static uint32_t irCount = 0;
 static bool irFilled = false;
-static unsigned long lerpLastTime = -1;
+static float targetLeft = 0;
+static float targetRight = 0;
+static float currentLeft = 0;
+static float currentRight = 0;
+static float startLeft = 0;
+static float startRight = 0;
+static unsigned long lerpStart = -1;
 
 
 static void writeDutyCycle(unsigned char bwdPin, unsigned char fwdPin,
@@ -63,70 +69,50 @@ void loop()
     } 
 
     if (current & (1 << 2)) {
-        if ((last & (1 << 2)) == 0) {
-            lerpLastTime = -1;
-        }
-
-        const int dutyCycle = lerp(maxDutyCycle, lerpTime);
-
-        writeLRDutyCycle(dutyCycle, dutyCycle);
+        lerpTo(maxDutyCycle, maxDutyCycle);
     } else if (current & (1 << 3)) {
-        if ((last & (1 << 3)) == 0) {
-            lerpLastTime = -1;
-        }
-
-        const int dutyCycle = lerp(maxDutyCycle / 2, lerpTime);
-
-        writeLRDutyCycle(-dutyCycle, dutyCycle);
+        lerpTo(maxDutyCycle / 2, maxDutyCycle)
     } else if (current & (1 << 4)) {
-        if ((last & (1 << 4)) == 0) {
-            lerpLastTime = -1;
-        }
-
-        const int dutyCycle = lerp(maxDutyCycle, lerpTime);
-
-        writeLRDutyCycle(-dutyCycle, dutyCycle);
+        lerpTo(-maxDutyCycle, maxDutyCycle);
     } else if (current & (1 << 1)) {
-        if ((last & (1 << 1)) == 0) {
-            lerpLastTime = -1;
-        }
-
-        const int dutyCycle = lerp(maxDutyCycle / 2, lerpTime);
-
-        writeLRDutyCycle(dutyCycle, -dutyCycle);
+        lerpTo(maxDutyCycle, maxDutyCycle / 2);
     } else if (current & 1) {
-        if ((last & 1) == 0) {
-            lerpLastTime = -1;
-        }
-
-        const int dutyCycle = lerp(maxDutyCycle, lerpTime);
-
-        writeLRDutyCycle(dutyCycle, -dutyCycle);
+        lerpTo(maxDutyCycle, -maxDutyCycle);
     } else {
-        const int dutyCycle = maxDutyCycle / 4;
-
-        writeLRDutyCycle(dutyCycle, dutyCycle);
+        lerpTo(maxDutyCycle, maxDutyCycle);
     }
 
     last = current;
+
+    unsigned long diff = millis() - lerpStart;
+
+    if (diff < lerpTime) {
+        currentLeft = startLeft + (targetLeft - startLeft) * diff / lerpTime;
+        currentRight = startRight + (targetRight - startRight) * diff /
+            lerpTime;
+    } else {
+        currentLeft = targetLeft;
+        currentRight = targetRight;
+    }
+
+//    Serial.print(currentLeft);
+//    Serial.write(" ");
+//    Serial.println(currentRight);
+    writeLRDutyCycle(currentLeft, currentRight);
 }
 
 
-static int lerp(int max, int transitionTime)
+static void lerpTo(int left, int right)
 {
-    if (lerpLastTime == -1) {
-        lerpLastTime = millis();
-
-        return 0;
+    if (targetLeft == left && targetRight == right) {
+        return;
     }
 
-    unsigned long diff = millis() - lerpLastTime;
-
-    if (diff >= transitionTime) {
-        return max;
-    }
-
-    return max * diff / transitionTime;
+    targetLeft = left;
+    targetRight = right;
+    startLeft = currentLeft;
+    startRight = currentRight;
+    lerpStart = millis();
 }
 
 
