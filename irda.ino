@@ -8,19 +8,11 @@ static const unsigned char clpPin = 2;
 static const uint16_t irThreshold = 200;
 static const uint32_t irSamplesCount = 5;
 static const int maxDutyCycle = 255;
-static const float lerpTime = 100;
 
 static bool irLast[] = { false, false, false, false, false };
 static uint32_t irValues[sizeof (irLast) / sizeof (*irLast)][irSamplesCount];
 static uint32_t irCount = 0;
 static bool irFilled = false;
-static float targetLeft = 0;
-static float targetRight = 0;
-static float currentLeft = 0;
-static float currentRight = 0;
-static float startLeft = 0;
-static float startRight = 0;
-static unsigned long lerpStart = -1;
 
 
 static void writeDutyCycle(unsigned char bwdPin, unsigned char fwdPin,
@@ -32,7 +24,6 @@ static bool hasLine(unsigned char i);
 
 void setup()
 {
-    Serial.begin(9600);
     pinMode(leftBwdPin, OUTPUT);
     pinMode(leftFwdPin, OUTPUT);
     pinMode(rightBwdPin, OUTPUT);
@@ -69,50 +60,22 @@ void loop()
     } 
 
     if (current & (1 << 2)) {
-        lerpTo(maxDutyCycle, maxDutyCycle);
+        writeLRDutyCycle(maxDutyCycle, maxDutyCycle);
     } else if (current & (1 << 3)) {
-        lerpTo(maxDutyCycle / 2, maxDutyCycle)
+        writeLRDutyCycle(0, maxDutyCycle / 2);
     } else if (current & (1 << 4)) {
-        lerpTo(-maxDutyCycle, maxDutyCycle);
+        writeLRDutyCycle(-maxDutyCycle, maxDutyCycle);
     } else if (current & (1 << 1)) {
-        lerpTo(maxDutyCycle, maxDutyCycle / 2);
+        writeLRDutyCycle(maxDutyCycle / 2, 0);
     } else if (current & 1) {
-        lerpTo(maxDutyCycle, -maxDutyCycle);
+        writeLRDutyCycle(maxDutyCycle, -maxDutyCycle);
     } else {
-        lerpTo(maxDutyCycle, maxDutyCycle);
+        const int dutyCycle = maxDutyCycle / 4;
+
+        writeLRDutyCycle(dutyCycle, dutyCycle);
     }
 
     last = current;
-
-    unsigned long diff = millis() - lerpStart;
-
-    if (diff < lerpTime) {
-        currentLeft = startLeft + (targetLeft - startLeft) * diff / lerpTime;
-        currentRight = startRight + (targetRight - startRight) * diff /
-            lerpTime;
-    } else {
-        currentLeft = targetLeft;
-        currentRight = targetRight;
-    }
-
-//    Serial.print(currentLeft);
-//    Serial.write(" ");
-//    Serial.println(currentRight);
-    writeLRDutyCycle(currentLeft, currentRight);
-}
-
-
-static void lerpTo(int left, int right)
-{
-    if (targetLeft == left && targetRight == right) {
-        return;
-    }
-
-    targetLeft = left;
-    targetRight = right;
-    startLeft = currentLeft;
-    startRight = currentRight;
-    lerpStart = millis();
 }
 
 
